@@ -1,0 +1,29 @@
+# Gmail API
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.108.0
+
+# PDF Processing
+PyPDF2>=3.0.0
+pdfminer.six>=20221105
+pdfplumber>=0.10.0
+
+# OCR (optional)
+pytesseract>=0.3.10
+pdf2image>=1.16.0
+Pillow>=10.2.0  # Python 3.13 compatible (12.0.0+ recommended)
+
+# HTTP Requests
+requests>=2.31.0
+
+# LLM APIs (choose based on provider)
+openai>=1.3.0
+anthropic>=0.7.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# Optional: Machine Learning (for advanced classification)
+# scikit-learn>=1.3.0
+# numpy>=1.24.0
