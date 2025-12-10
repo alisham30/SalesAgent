@@ -16,6 +16,8 @@ from backend.pdf_engine.important_info import ImportantInfoExtractor
 from backend.pdf_engine.tender_id_detector import TenderIDDetector
 from backend.nlp.tech_spec_extractor import TechSpecExtractor
 from backend.nlp.llm_agent import LLMAgent
+import re
+import os
 
 class TenderAgent:
     """Main tender processing agent"""
@@ -171,47 +173,69 @@ class TenderAgent:
                 logger.info(f"  - {linked_pdf.name}")
         else:
             logger.info(f"No linked PDFs found in {pdf_path.name}")
-        
-        # Process linked PDFs and extract technical specs from them
+
+        # NEW: Heuristically look for technical/spec PDFs in the same directory that aren't directly linked
+        spec_pdf_patterns = [r'spec', r'technical', r'atc']
+        pdf_dir = pdf_path.parent
+        found_nearby_spec_pdfs = []
+        for fname in os.listdir(pdf_dir):
+            if fname.lower().endswith('.pdf') and str(pdf_path.name) not in fname:
+                for pat in spec_pdf_patterns:
+                    if re.search(pat, fname, re.IGNORECASE):
+                        candidate_path = pdf_dir / fname
+                        if candidate_path not in linked_pdfs:
+                            found_nearby_spec_pdfs.append(candidate_path)
+        if found_nearby_spec_pdfs:
+            logger.info(f"Also found {len(found_nearby_spec_pdfs)} possible spec PDFs nearby: {[f.name for f in found_nearby_spec_pdfs]}")
+
+        # Treat all such PDFs as technical spec sources
+        extra_spec_pdfs = linked_pdfs + found_nearby_spec_pdfs
+
+        # Process all linked/nearby spec PDFs and extract technical specs from them
         linked_tech_specs = []
         linked_texts = []
-        
-        for linked_pdf in linked_pdfs:
+
+        for linked_pdf in extra_spec_pdfs:
             try:
                 linked_text = self.pdf_extractor.extract_text(linked_pdf)
                 if linked_text:
                     linked_texts.append(linked_text)
-                    text += "\n\n" + linked_text
-                    
+                    # Do not concat to main text in this block (to distinguish sources)
                     # Extract technical specifications from this linked PDF
                     linked_specs = self.tech_spec_extractor.extract_specs(linked_text, use_llm=True)
                     if linked_specs.get('formatted_specs'):
                         linked_tech_specs.append(linked_specs.get('formatted_specs'))
-                        logger.info(f"Found technical specifications in linked PDF: {linked_pdf.name}")
+                    if 'raw_specs' in linked_specs and linked_specs['raw_specs']:
+                        # Keep best raw_specs for merging
+                        if 'extra_raw_specs' not in locals():
+                            extra_raw_specs = []
+                        extra_raw_specs.extend(linked_specs['raw_specs'])
+                    logger.info(f"Found technical specifications in nearby/linked PDF: {linked_pdf.name}")
             except Exception as e:
-                logger.error(f"Error processing linked PDF {linked_pdf}: {e}")
-        
-        # Combine technical specifications: prioritize linked PDFs if main PDF has none
+                logger.error(f"Error processing linked/nearby PDF {linked_pdf}: {e}")
+
+        # Combine technical specifications: prioritize linked/nearby PDFs if main PDF has none
         if not main_tech_specs and linked_tech_specs:
-            # If main PDF has no tech specs, use specs from linked PDFs
+            # If main PDF has no tech specs, use specs from extra PDFs
             tech_specs = {
                 'formatted_specs': '\n\n'.join(linked_tech_specs),
-                'raw_specs': [],
+                'raw_specs': list(locals().get('extra_raw_specs', [])),
                 'count': len(linked_tech_specs)
             }
-            logger.info("Using technical specifications from linked PDFs")
+            logger.info("Using technical specifications from extra (linked or nearby) PDFs")
         elif main_tech_specs and linked_tech_specs:
-            # Combine both main and linked PDF specs
+            # Combine both main and extra PDF specs
             combined_specs = main_tech_specs
             for linked_spec in linked_tech_specs:
                 if linked_spec and linked_spec not in combined_specs:
                     combined_specs += '\n\n' + linked_spec
+            merged_raw = tech_specs.get('raw_specs', []) + list(locals().get('extra_raw_specs', []))
             tech_specs = {
                 'formatted_specs': combined_specs,
-                'raw_specs': tech_specs.get('raw_specs', []),
+                'raw_specs': merged_raw,
                 'count': tech_specs.get('count', 0) + len(linked_tech_specs)
             }
-            logger.info("Combined technical specifications from main and linked PDFs")
+            logger.info("Combined technical specifications from main and extra PDFs")
         # If main_tech_specs exists and no linked specs, use main (already set above)
         
         # Extract important information from combined text
@@ -230,17 +254,27 @@ class TenderAgent:
         tech_specs_str = tech_specs.get('formatted_specs', '')
         if not isinstance(tech_specs_str, str):
             tech_specs_str = str(tech_specs_str) if tech_specs_str else ''
-        
+
+        # Build structured technical specifications from raw_specs
+        raw_specs = tech_specs.get('raw_specs', [])
+        spec_dict = {}
+        for line in raw_specs:
+            line_clean = line.strip()
+            # Split on first colon or pipe
+            match = re.match(r'([^:|]+)[:|](.+)', line_clean)
+            if match:
+                k, v = match.group(1).strip(), match.group(2).strip()
+                if k and v:
+                    spec_dict[k] = v
+        # LLM fallback fields remain unchanged
         llm_tech_specs = llm_info.get('technical_specs', '')
         if isinstance(llm_tech_specs, list):
-            # Convert list to vertical string format
             llm_tech_specs = '\n'.join(str(item) for item in llm_tech_specs if item) if llm_tech_specs else ''
         elif isinstance(llm_tech_specs, dict):
-            # Convert dict to key-value string format
             llm_tech_specs = '\n'.join(f"{k}: {v}" for k, v in llm_tech_specs.items() if v) if llm_tech_specs else ''
         elif not isinstance(llm_tech_specs, str):
             llm_tech_specs = str(llm_tech_specs) if llm_tech_specs else ''
-        
+
         technical_specifications = tech_specs_str or llm_tech_specs
         
         # Get delivery deadline
@@ -262,14 +296,14 @@ class TenderAgent:
             'tender_id': tender_id,
             'delivery_deadline': delivery_deadline,
             'project_name': project_name,
-            'ministry': ministry
+            'ministry': ministry,
         }
-        
-        # Only add technical_specifications if it exists and is a non-empty string
+        # Add structured technical specifications dict if present
+        if spec_dict:
+            result['technical_specifications_structured'] = spec_dict
+        # Add formatted technical specifications string if present
         if technical_specifications and isinstance(technical_specifications, str) and technical_specifications.strip():
-            # Limit to reasonable length and ensure vertical format
             specs_clean = technical_specifications.strip()
-            # If too long, truncate (keep first 2000 chars)
             if len(specs_clean) > 2000:
                 specs_clean = specs_clean[:2000] + "..."
             result['technical_specifications'] = specs_clean

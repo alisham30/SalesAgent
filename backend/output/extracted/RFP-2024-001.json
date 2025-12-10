@@ -3,5 +3,5 @@
   "delivery_deadline": "20th November 2025",
   "project_name": "Enterprise IoT Sensor Network - Manufacturing Plant",
   "ministry": "Procurement Department - Smart Manufacturing Division",
-  "technical_specifications": "Product Description: Industrial Temperature and Humidity Sensor\nQuantity: 500 Units\nTemperature Range: -40C to +125C\nHumidity Range: 0-100% RH\nAccuracy: {'Temperature': '+/-0.5C', 'Humidity': '+/-2% RH'}\nSensor Type: Digital\nConnectivity: LoRaWAN\nPower Supply: 3.3-5V DC\nEnclosure: IP65 Industrial-grade\nOperating Altitude: Up to 3000 m\nCertifications: ['CE', 'FCC', 'RoHS']"
+  "technical_specifications": "Temperature Range: -40C to +125C\nHumidity Range: 0-100% RH\nAccuracy: {'Temperature': '+/-0.5C', 'Humidity': '+/-2% RH'}\nSensor Type: Digital\nConnectivity: LoRaWAN\nPower Supply: 3.3-5V DC\nEnclosure: IP65 Industrial-grade\nOperating Altitude: Up to 3000 m\nCertifications: ['CE', 'FCC', 'RoHS']"
 }

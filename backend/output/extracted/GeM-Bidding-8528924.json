@@ -1,7 +1,24 @@
 {
   "tender_id": "GeM-Bidding-8528924",
-  "delivery_deadline": "{'bid_end_date': '08-12-2025 09:00:00', 'bid_opening_date': '08-12-2025 09:30:00', 'bid_offer_validity': '90 Days from Bid End Date'}",
+  "delivery_deadline": "08-12-2025 09:00:00",
   "project_name": "Central Railway Stores Deptt",
   "ministry": "Ministry Of Railways",
-  "technical_specifications": "XLPE Cable for Working Voltages up to and Including 1.1 KV as per IS 7098 (Part 1) (Q2)"
+  "technical_specifications_structured": {
+    "Conformity of the specification for XLPE cable": "as per IS:7098",
+    "Cables suitable for use in mines": "No",
+    "Cables suitable for use in low temperature applications": "No",
+    "Classification of cables for improved fire performace category": "01",
+    "Nominal Area of Conductor (in Sq mm)": "185",
+    "Number of core (in Nos)": "4",
+    "Material of conductor": "Material",
+    "Type of inner sheath": "Type",
+    "Type of cable": "Type of cable Armoured cable Material of armouring Galvanized steel formed wire Type of armouring Single wire OUTER SHEATH Type of outer sheath PVC",
+    "Material of armouring": "Material of armouring Galvanized steel formed wire Type of armouring Single wire OUTER SHEATH Type of outer sheath PVC",
+    "Type of armouring": "Type of armouring Single wire OUTER SHEATH Type of outer sheath PVC",
+    "Type of outer sheath": "Type",
+    "Type of sequential marking on cable": "Type of sequential marking on cable Screen printing on cable PACKING AND MARKING Cable wound on ISI Marked Wooden drum Standard length of cable on drum",
+    "Cable wound on": "C",
+    "Standard length of cable on drum (in m)": "500"
+  },
+  "technical_specifications": "Conformity of the specification for XLPE cable: as per IS:7098\nCables suitable for use in mines: No\nCables suitable for use in low temperature applications: No\nClassification of cables for improved fire performace category: 01\nNominal Area of Conductor (in Sq mm): 185\nNumber of core (in Nos): 4\nMaterial of conductor: Material\nType of inner sheath: Type\nType of cable: Type of cable Armoured cable Material of armouring Galvanized steel formed wire Type of armouring Single wire OUTER SHEATH Type of outer sheath PVC\nMaterial of armouring: Material of armouring Galvanized steel formed wire Type of armouring Single wire OUTER SHEATH Type of outer sheath PVC\nType of armouring: Type of armouring Single wire OUTER SHEATH Type of outer sheath PVC\nType of outer sheath: Type\nType of sequential marking on cable: Type of sequential marking on cable Screen printing on cable PACKING AND MARKING Cable wound on ISI Marked Wooden drum Standard length of cable on drum\nCable wound on: C\nStandard length of cable on drum (in m): 500"
 }

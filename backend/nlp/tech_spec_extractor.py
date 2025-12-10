@@ -131,6 +131,10 @@ class TechSpecExtractor:
         table_specs = self._extract_table_format_specs(text)
         specs.extend(table_specs)
         
+        # Also try extracting from concatenated table format (all on one line)
+        concatenated_table_specs = self._extract_concatenated_table_specs(text)
+        specs.extend(concatenated_table_specs)
+        
         # Extract item categories and product lists
         item_categories = self._extract_item_categories(text)
         specs.extend(item_categories)
@@ -192,6 +196,7 @@ class TechSpecExtractor:
         """
         Extract specifications from table format
         Handles tables with columns like "Specification Name" and "Allowed Values"
+        Also handles format where spec names and values are on same line or consecutive lines
         
         Args:
             text: Text containing table
@@ -204,72 +209,226 @@ class TechSpecExtractor:
         specs = []
         lines = text.split('\n')
         
-        # Look for table rows - typically have multiple columns separated by spaces/tabs
-        # Pattern: Specification Name followed by value(s)
+        # Find the table section - look for "Specification Name" or "Bid Requirement"
+        table_start_idx = -1
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            if 'specification name' in line_lower or 'bid requirement' in line_lower or 'allowed values' in line_lower:
+                table_start_idx = i
+                break
         
-        # Common specification field patterns
-        spec_fields = {
-            'category of cable': r'category\s+of\s+cable',
-            'type of insulation': r'type\s+of\s+insulation',
-            'cable construction type': r'cable\s+construction\s+type',
-            'nominal area of conductor': r'nominal\s+(?:area\s+of\s+conductor|cross\s+sectional\s+area)',
-            'number of core': r'number\s+of\s+core|no\s+of\s+core',
-            'sheath type': r'sheath\s+type',
-            'colour of sheath': r'colour?\s+of\s+sheath',
-            'material of conductor': r'material\s+of\s+conductor',
-            'type of cable': r'type\s+of\s+cable',
-            'material of armouring': r'material\s+of\s+armouring',
-            'type of outer sheath': r'type\s+of\s+outer\s+sheath',
-            'type of inner sheath': r'type\s+of\s+inner\s+sheath',
-            'conformity': r'conformity\s+of\s+the\s+specification',
-            'classification': r'classification\s+of\s+cables',
-            'construction of conductor': r'construction\s+of\s+the\s+conductor',
-            'type of armouring': r'type\s+of\s+armouring',
-            'standard length': r'standard\s+length\s+of\s+cable',
-            'cable wound on': r'cable\s+wound\s+on',
+        if table_start_idx == -1:
+            # Try to find table by looking for common category headers
+            for i, line in enumerate(lines):
+                if line.strip().upper() in ['STANDARDS', 'GENERIC', 'CONSTRUCTION', 'ARMOURING', 'OUTER SHEATH', 'MARKING ON CABLE', 'PACKING AND MARKING', 'CERTIFICATION']:
+                    table_start_idx = i
+                    break
+        
+        if table_start_idx == -1:
+            return specs
+        
+        # Category headers that indicate new sections
+        category_headers = ['STANDARDS', 'GENERIC', 'CONSTRUCTION', 'ARMOURING', 'ARMORING', 
+                           'OUTER SHEATH', 'INNER SHEATH', 'MARKING ON CABLE', 'MARKING', 
+                           'PACKING AND MARKING', 'PACKING', 'CERTIFICATION']
+        
+        # Common specification field patterns (expanded)
+        spec_field_patterns = [
+            r'conformity\s+of\s+the\s+specification',
+            r'cables\s+suitable\s+for\s+use\s+in',
+            r'classification\s+of\s+cables',
+            r'nominal\s+area\s+of\s+conductor',
+            r'number\s+of\s+core',
+            r'material\s+of\s+conductor',
+            r'construction\s+of\s+the?\s+conductor',
+            r'type\s+of\s+inner\s+sheath',
+            r'type\s+of\s+cable',
+            r'material\s+of\s+armouring',
+            r'type\s+of\s+armouring',
+            r'type\s+of\s+outer\s+sheath',
+            r'type\s+of\s+sequential\s+marking',
+            r'cable\s+wound\s+on',
+            r'standard\s+length\s+of\s+cable',
+            r'availability\s+of\s+optional\s+test\s+reports',
+        ]
+        
+        i = table_start_idx
+        current_category = None
+        
+        while i < len(lines):
+            line = lines[i].strip()
+            if not line:
+                i += 1
+                continue
+            
+            line_upper = line.upper()
+            line_lower = line.lower()
+            
+            # Check if this is a category header
+            is_category = False
+            for cat in category_headers:
+                if cat in line_upper and len(line) < 50:
+                    current_category = cat
+                    is_category = True
+                    i += 1
+                    break
+            
+            if is_category:
+                continue
+            
+            # Skip header rows
+            if 'specification name' in line_lower or 'bid requirement' in line_lower or 'allowed values' in line_lower:
+                i += 1
+                continue
+            
+            # Try to match specification field patterns
+            matched_pattern = None
+            for pattern in spec_field_patterns:
+                match = re.search(pattern, line_lower, re.IGNORECASE)
+                if match:
+                    matched_pattern = pattern
+                    break
+            
+            if matched_pattern:
+                # Extract the specification name (full phrase)
+                spec_name_match = re.search(r'([A-Z][^A-Z]*(?:\s+[A-Z][^A-Z]*)*)', line, re.IGNORECASE)
+                if not spec_name_match:
+                    # Try to get the full spec name from the matched pattern context
+                    spec_name = line[:100].strip()  # Take first part as spec name
+                else:
+                    spec_name = spec_name_match.group(1).strip()
+                
+                # Try to find the value - could be on same line or next line(s)
+                value = None
+                
+                # Check if value is on same line (after spec name)
+                # Look for common value patterns
+                value_patterns = [
+                    r'(?:as\s+per|per)\s+[A-Z][^A-Z]*(?:\s+[A-Z][^A-Z]*)*',  # "as per IS:7098..."
+                    r'\b(?:Yes|No|Not\s+applicable)\b',
+                    r'\b\d+\b',  # Numbers
+                    r'[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*',  # Capitalized words
+                ]
+                
+                # Try to extract value from same line
+                remaining_line = line[len(spec_name):].strip() if spec_name in line else line
+                for vp in value_patterns:
+                    match = re.search(vp, remaining_line, re.IGNORECASE)
+                    if match:
+                        value = match.group(0).strip()
+                        if len(value) > 5:  # Valid value
+                            break
+                
+                # If not found on same line, check next 1-2 lines
+                if not value or len(value) < 3:
+                    for j in range(i+1, min(i+3, len(lines))):
+                        next_line = lines[j].strip()
+                        if next_line and len(next_line) < 200:
+                            # Check if it's not another category or spec name
+                            is_next_category = any(cat in next_line.upper() for cat in category_headers)
+                            is_next_spec = any(re.search(p, next_line.lower(), re.IGNORECASE) for p in spec_field_patterns)
+                            
+                            if not is_next_category and not is_next_spec:
+                                value = next_line
+                                i = j  # Skip this line in next iteration
+                                break
+                
+                if value and len(value) > 2 and len(value) < 200:
+                    # Clean up spec name - remove Hindi text if present
+                    spec_name_clean = re.sub(r'[^\x00-\x7F]+', '', spec_name).strip()
+                    if not spec_name_clean:
+                        spec_name_clean = spec_name.strip()
+                    
+                    # Clean up value
+                    value_clean = value.strip()
+                    
+                    if spec_name_clean and value_clean:
+                        spec = f"{spec_name_clean}: {value_clean}"
+                        specs.append(spec)
+            
+            i += 1
+        
+        return specs
+    
+    def _extract_concatenated_table_specs(self, text: str) -> List[str]:
+        """
+        Extract specifications from concatenated table format where everything is on one long line
+        Handles format like: "Conformity of the specification for XLPE cable as per IS:7098..."
+        
+        Args:
+            text: Text containing concatenated table
+        
+        Returns:
+            List of "Key: Value" specification strings
+        """
+        import re
+        
+        specs = []
+        
+        # Look for the table section - find text after "Specification Name" or "Bid Requirement"
+        table_match = re.search(r'(?:specification\s+name|bid\s+requirement|allowed\s+values).*?(STANDARDS|GENERIC|CONSTRUCTION)', text, re.IGNORECASE | re.DOTALL)
+        if not table_match:
+            return specs
+        
+        # Extract the table content starting from the match
+        table_text = text[table_match.start():]
+        
+        # Define all the specification patterns with their expected values
+        spec_patterns = [
+            (r'Conformity\s+of\s+the\s+specification\s+for\s+XLPE\s+cable', r'as\s+per\s+IS[:\s]*\d+[^\n]*'),
+            (r'Cables\s+suitable\s+for\s+use\s+in\s+mines', r'\b(?:Yes|No|Not\s+applicable)\b'),
+            (r'Cables\s+suitable\s+for\s+use\s+in\s+low\s+temperature\s+applications', r'\b(?:Yes|No|Not\s+applicable)\b'),
+            (r'Classification\s+of\s+cables\s+for\s+improved\s+fire\s+performace\s+category', r'\d+'),
+            (r'Nominal\s+Area\s+of\s+Conductor\s*\([^)]*\)', r'\d+'),
+            (r'Number\s+of\s+core\s*\([^)]*\)', r'\d+'),
+            (r'Material\s+of\s+conductor', r'[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*'),
+            (r'Construction\s+of\s+the\s+conductor', r'[A-Z][a-z]+(?:\s+[a-z]+)*'),
+            (r'Type\s+of\s+inner\s+sheath', r'[A-Z][a-z]+'),
+            (r'Type\s+of\s+cable', r'[A-Z][a-z]+(?:\s+[a-z]+)*'),
+            (r'Material\s+of\s+armouring', r'[A-Z][a-z]+(?:\s+[a-z]+)*'),
+            (r'Type\s+of\s+armouring', r'[A-Z][a-z]+(?:\s+[a-z]+)*'),
+            (r'Type\s+of\s+outer\s+sheath', r'[A-Z0-9-]+'),
+            (r'Type\s+of\s+sequential\s+marking\s+on\s+cable', r'[A-Z][a-z]+(?:\s+[a-z]+)*'),
+            (r'Cable\s+wound\s+on', r'[A-Z][^A-Z]*(?:\s+[A-Z][^A-Z]*)*'),
+            (r'Standard\s+length\s+of\s+cable\s+on\s+drum\s*\([^)]*\)', r'\d+'),
+            (r'Availability\s+of\s+Optional\s+Test\s+Reports', r'[^A-Z]+(?:\s+[^A-Z]+)*(?:,\s*[^A-Z]+)*'),
+        ]
+        
+        # Also try a more general pattern: find known spec names followed by values
+        known_specs = {
+            'Conformity of the specification for XLPE cable': r'as\s+per\s+IS[:\s]*\d+[^\s]*',
+            'Cables suitable for use in mines': r'\b(?:Yes|No)\b',
+            'Cables suitable for use in low temperature applications': r'\b(?:Yes|No)\b',
+            'Classification of cables for improved fire performace category': r'\d+',
+            'Nominal Area of Conductor (in Sq mm)': r'\d+',
+            'Number of core (in Nos)': r'\d+',
+            'Material of conductor': r'[A-Z][a-z]+',
+            'Construction of the conductor': r'[A-Z][a-z]+(?:\s+[a-z]+)+',
+            'Type of inner sheath': r'[A-Z][a-z]+',
+            'Type of cable': r'[A-Z][a-z]+(?:\s+[a-z]+)+',
+            'Material of armouring': r'[A-Z][a-z]+(?:\s+[a-z]+)+',
+            'Type of armouring': r'[A-Z][a-z]+(?:\s+[a-z]+)+',
+            'Type of outer sheath': r'[A-Z0-9-]+',
+            'Type of sequential marking on cable': r'[A-Z][a-z]+(?:\s+[a-z]+)+',
+            'Cable wound on': r'[A-Z][^A-Z]*(?:\s+[A-Z][^A-Z]*)*',
+            'Standard length of cable on drum (in m)': r'\d+',
+            'Availability of Optional Test Reports': r'[^A-Z]+(?:\s+[^A-Z]+)*(?:,\s*[^A-Z]+)*',
         }
         
-        for i, line in enumerate(lines):
-            line_lower = line.lower().strip()
-            
-            # Check each spec field pattern
-            for field_name, pattern in spec_fields.items():
-                if re.search(pattern, line_lower, re.IGNORECASE):
-                    # Try to extract value from same line or next lines
-                    # Look for value after colon, dash, or in next column
-                    value = None
-                    
-                    # Check same line for value
-                    if ':' in line:
-                        parts = line.split(':', 1)
-                        if len(parts) == 2:
-                            value = parts[1].strip()
-                    elif '|' in line:
-                        # Table format - value might be in next column
-                        cols = [c.strip() for c in line.split('|')]
-                        if len(cols) >= 3:  # Usually: Description | Spec Name | Value
-                            value = cols[-1].strip()  # Last column is usually the value
-                    
-                    # If not found, check next 2 lines
-                    if not value or len(value) < 2:
-                        for j in range(i+1, min(i+3, len(lines))):
-                            next_line = lines[j].strip()
-                            if next_line and len(next_line) < 150:
-                                # Check if it's a value (not another field name)
-                                if not any(fn in next_line.lower() for fn in spec_fields.keys()):
-                                    value = next_line
-                                    break
-                    
-                    if value and len(value) < 150:
-                        # Get original case for field name
-                        orig_line = line.strip()
-                        if ':' in orig_line:
-                            key = orig_line.split(':', 1)[0].strip()
-                        else:
-                            key = field_name.title()
-                        spec = f"{key}: {value}"
+        for spec_name, value_pattern in known_specs.items():
+            # Create pattern that finds spec name followed by value
+            pattern = re.escape(spec_name) + r'\s+' + value_pattern
+            match = re.search(pattern, table_text, re.IGNORECASE)
+            if match:
+                # Extract the value part
+                full_match = match.group(0)
+                # Try to extract just the value
+                value_match = re.search(value_pattern, full_match, re.IGNORECASE)
+                if value_match:
+                    value = value_match.group(0).strip()
+                    spec = f"{spec_name}: {value}"
+                    if spec not in specs:
                         specs.append(spec)
-                    break
         
         return specs
     
