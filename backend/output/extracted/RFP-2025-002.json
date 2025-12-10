@@ -1,0 +1,7 @@
+{
+  "tender_id": "RFP-2025-002",
+  "delivery_deadline": "28th November 2025",
+  "project_name": "Smart Street Lighting IoT System - Urban Infrastructure Project",
+  "ministry": "SmartInfra Solutions Pvt. Ltd.",
+  "technical_specifications": "Input Voltage: 90-300V AC\nControl: Remote On/Off, Dimming Control\nConnectivity: LoRaWAN / NB-IoT / Wi-Fi\nPower Consumption: <2W per controller\nOperating Temperature: -20C to +70C\nIngress Protection: IP66\nEnclosure Material: UV Resistant Polycarbonate\nCertifications: ['CE', 'BIS', 'RoHS']"
+}

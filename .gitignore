@@ -52,13 +52,8 @@ backend/token.json
 logs/
 *.log
 
-# Output
-backend/output/
-pdfs/
 
-# Models
-models/*.pkl
-models/tender_counter.txt
+
 
 # Environment variables
 .env
