@@ -4,6 +4,7 @@ Connects to Gmail API and fetches emails
 """
 import base64
 import os
+import time
 from pathlib import Path
 from typing import List, Dict, Optional
 from google.auth.transport.requests import Request
@@ -21,6 +22,52 @@ class GmailReader:
         self.service = None
         self.credentials = None
         self._authenticate()
+    
+    def _retry_with_backoff(self, func, max_retries: int = 3, initial_delay: float = 1.0, *args, **kwargs):
+        """
+        Retry a function with exponential backoff
+        
+        Args:
+            func: Function to retry
+            max_retries: Maximum number of retry attempts
+            initial_delay: Initial delay in seconds before first retry
+            *args, **kwargs: Arguments to pass to the function
+            
+        Returns:
+            Result of the function call, or None if all retries fail
+        """
+        delay = initial_delay
+        last_exception = None
+        
+        for attempt in range(max_retries + 1):
+            try:
+                return func(*args, **kwargs)
+            except (HttpError, ConnectionError, OSError) as e:
+                last_exception = e
+                error_str = str(e).lower()
+                
+                # Check if error is retryable
+                is_retryable = (
+                    '10054' in error_str or  # Connection forcibly closed
+                    'connection' in error_str or
+                    'unable to find the server' in error_str or
+                    'network' in error_str or
+                    (isinstance(e, HttpError) and e.resp.status in [429, 500, 502, 503, 504])  # Rate limit or server errors
+                )
+                
+                if not is_retryable or attempt == max_retries:
+                    raise e
+                
+                logger.warning(f"Retryable error (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {delay:.1f}s...")
+                time.sleep(delay)
+                delay *= 2  # Exponential backoff
+            except Exception as e:
+                # Non-retryable errors
+                raise e
+        
+        if last_exception:
+            raise last_exception
+        return None
     
     def _authenticate(self):
         """Authenticate with Gmail API"""
@@ -90,24 +137,46 @@ class GmailReader:
             List of message dictionaries
         """
         try:
-            results = self.service.users().messages().list(
-                userId='me', q=query, maxResults=max_results
-            ).execute()
+            # Retry the list operation if it fails
+            results = self._retry_with_backoff(
+                lambda: self.service.users().messages().list(
+                    userId='me', q=query, maxResults=max_results
+                ).execute()
+            )
             
             messages = results.get('messages', [])
             logger.info(f"Found {len(messages)} messages")
             
-            # Fetch full message details
+            # Fetch full message details with retry logic and rate limiting
             full_messages = []
-            for msg in messages:
-                try:
-                    message = self.service.users().messages().get(
-                        userId='me', id=msg['id'], format='full'
-                    ).execute()
-                    full_messages.append(message)
-                except Exception as e:
-                    logger.error(f"Error fetching message {msg['id']}: {e}")
+            failed_count = 0
             
+            for idx, msg in enumerate(messages):
+                try:
+                    # Add a small delay between requests to avoid rate limiting
+                    if idx > 0 and idx % 10 == 0:
+                        time.sleep(0.5)  # Brief pause every 10 messages
+                    
+                    # Retry fetching individual message (capture msg_id in closure)
+                    msg_id = msg['id']
+                    message = self._retry_with_backoff(
+                        lambda mid=msg_id: self.service.users().messages().get(
+                            userId='me', id=mid, format='full'
+                        ).execute(),
+                        max_retries=3,
+                        initial_delay=1.0
+                    )
+                    full_messages.append(message)
+                    
+                except Exception as e:
+                    failed_count += 1
+                    logger.error(f"Error fetching message {msg['id']} after retries: {e}")
+                    # Continue processing other messages even if one fails
+            
+            if failed_count > 0:
+                logger.warning(f"Failed to fetch {failed_count} out of {len(messages)} messages")
+            
+            logger.info(f"Successfully fetched {len(full_messages)} messages")
             return full_messages
             
         except HttpError as e:
@@ -227,7 +296,7 @@ class GmailReader:
     
     def download_attachment(self, message_id: str, attachment_id: str) -> Optional[bytes]:
         """
-        Download attachment data
+        Download attachment data with retry logic
         
         Args:
             message_id: Gmail message ID
@@ -237,9 +306,13 @@ class GmailReader:
             Attachment data as bytes, or None if failed
         """
         try:
-            attachment = self.service.users().messages().attachments().get(
-                userId='me', messageId=message_id, id=attachment_id
-            ).execute()
+            attachment = self._retry_with_backoff(
+                lambda: self.service.users().messages().attachments().get(
+                    userId='me', messageId=message_id, id=attachment_id
+                ).execute(),
+                max_retries=3,
+                initial_delay=1.0
+            )
             
             data = attachment.get('data')
             if data:
@@ -247,7 +320,7 @@ class GmailReader:
             return None
             
         except HttpError as e:
-            logger.error(f"Error downloading attachment: {e}")
+            logger.error(f"Error downloading attachment after retries: {e}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error downloading attachment: {e}")

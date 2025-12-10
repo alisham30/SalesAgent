@@ -148,4 +148,70 @@ class ImportantInfoExtractor:
                     descriptions.append(line)
         
         return descriptions
+    
+    def extract_project_name(self, text: str) -> Optional[str]:
+        """Extract project name from tender document"""
+        patterns = [
+            r'project[:\s]+(?:name|title)[:\s]+([^\n]{10,100})',
+            r'project[:\s]+([A-Z][^\n]{20,150})',
+            r'tender[:\s]+(?:for|of)[:\s]+([^\n]{10,100})',
+            r'name[:\s]+of[:\s]+(?:the\s+)?project[:\s]+([^\n]{10,100})',
+            r'title[:\s]+([^\n]{20,150})',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                project_name = match.group(1).strip()
+                # Clean up common suffixes
+                project_name = re.sub(r'[:\-]+$', '', project_name).strip()
+                if len(project_name) > 10:
+                    return project_name
+        
+        # Try to find it in the first few lines (often project name is at the top)
+        lines = text.split('\n')[:10]
+        for line in lines:
+            line = line.strip()
+            if len(line) > 20 and len(line) < 200:
+                # Check if it looks like a project name (not all caps, has some structure)
+                if not line.isupper() and not re.match(r'^\d+', line):
+                    # Check for common project name indicators
+                    if any(keyword in line.lower() for keyword in ['project', 'supply', 'procurement', 'tender']):
+                        return line
+        
+        return None
+    
+    def extract_ministry(self, text: str) -> Optional[str]:
+        """Extract ministry/department name from tender document"""
+        patterns = [
+            r'ministry[:\s]+of[:\s]+([A-Z][^\n]{5,80})',
+            r'department[:\s]+of[:\s]+([A-Z][^\n]{5,80})',
+            r'([A-Z][A-Z\s&]{5,50})\s+ministry',
+            r'([A-Z][A-Z\s&]{5,50})\s+department',
+            r'issuing[:\s]+(?:authority|organization)[:\s]+([^\n]{5,80})',
+            r'procuring[:\s]+(?:entity|authority)[:\s]+([^\n]{5,80})',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                ministry = match.group(1).strip()
+                # Clean up
+                ministry = re.sub(r'[:\-]+$', '', ministry).strip()
+                if len(ministry) > 3:
+                    return ministry
+        
+        # Common Indian ministries/departments
+        common_ministries = [
+            'Ministry of Power', 'Ministry of Railways', 'Ministry of Defence',
+            'Ministry of Electronics', 'Ministry of Communications',
+            'Department of Telecommunications', 'Department of Power',
+            'Central Public Works Department', 'CPWD'
+        ]
+        
+        for ministry in common_ministries:
+            if ministry.lower() in text.lower():
+                return ministry
+        
+        return None
 

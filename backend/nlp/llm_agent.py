@@ -148,19 +148,15 @@ Output format:
         
         prompt = f"""Extract the following information from this tender document text:
 
-{text[:3000]}  # Limit text length
+{text[:5000]}  # Limit text length
 
-Extract:
-1. Technical specifications (detailed)
+Extract ONLY these fields:
+1. Technical specifications (detailed, if present in document)
 2. Delivery deadline/period
-3. Quantities (BOQ)
-4. Warranty information
-5. Voltage grade
-6. Standards (IS, IEC, etc.)
-7. Item descriptions
-8. Bid submission date
+3. Project name (the name/title of the project/tender)
+4. Ministry (the ministry or department issuing the tender)
 
-Return as JSON with these keys: technical_specs, delivery, quantities, warranty, voltage, standards, items, submission_date"""
+Return as JSON with these keys: technical_specs, delivery, project_name, ministry"""
         
         result = self.call_llm(prompt, system_prompt)
         
