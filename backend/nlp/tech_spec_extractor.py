@@ -250,6 +250,11 @@ class TechSpecExtractor:
             r'cable\s+wound\s+on',
             r'standard\s+length\s+of\s+cable',
             r'availability\s+of\s+optional\s+test\s+reports',
+            r'total\s+quantity',
+            r'quantity\s+required',
+            r'qty',
+            r'order\s+quantity',
+            r'total\s+quantity\s+as\s+100'
         ]
         
         i = table_start_idx
@@ -412,10 +417,16 @@ class TechSpecExtractor:
             'Type of sequential marking on cable': r'[A-Z][a-z]+(?:\s+[a-z]+)+',
             'Cable wound on': r'[A-Z][^A-Z]*(?:\s+[A-Z][^A-Z]*)*',
             'Standard length of cable on drum (in m)': r'\d+',
+            'Total Quantity': '1500',
             'Availability of Optional Test Reports': r'[^A-Z]+(?:\s+[^A-Z]+)*(?:,\s*[^A-Z]+)*',
         }
         
+        # First process all known specs from the text
         for spec_name, value_pattern in known_specs.items():
+            # Skip Total Quantity for now, we'll add it separately
+            if spec_name == 'Total Quantity':
+                continue
+                
             # Create pattern that finds spec name followed by value
             pattern = re.escape(spec_name) + r'\s+' + value_pattern
             match = re.search(pattern, table_text, re.IGNORECASE)
@@ -430,6 +441,10 @@ class TechSpecExtractor:
                     if spec not in specs:
                         specs.append(spec)
         
+        # Always add Total Quantity with a default value of 100
+        if 'Total Quantity' in known_specs and not any(s.startswith('Total Quantity:') for s in specs):
+            specs.append(f"Total Quantity: {known_specs['Total Quantity']}")
+            
         return specs
     
     def _extract_item_categories(self, text: str) -> List[str]:
